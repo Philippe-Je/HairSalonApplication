@@ -15,6 +15,8 @@ class Client(db.Model):
     appointments = db.relationship('Appointment', backref='client', lazy=True)
 
 # ========== Stylist ==========
+from sqlalchemy.dialects.sqlite import JSON
+
 class Stylist(db.Model):
     __tablename__ = 'stylists'
 
@@ -23,9 +25,13 @@ class Stylist(db.Model):
     specialty = db.Column(db.String(100))
     email = db.Column(db.String(100))
     phone = db.Column(db.String(20))
+    
+    # New portfolio field to store a list of image URLs
+    portfolio_images = db.Column(JSON, default=[])
 
     # Relationships
     appointments = db.relationship('Appointment', backref='stylist', lazy=True)
+
 
 # ========== Service ==========
 class Service(db.Model):
