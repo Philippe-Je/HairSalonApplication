@@ -3,6 +3,41 @@ from flask import request, jsonify  # Used to handle incoming request data and r
 from app import app, db             # Import the Flask app and the SQLAlchemy database instance
 from models import Client, Stylist, Service, Appointment, Invoice  # Import ORM models
 from datetime import datetime       # Used to handle and format dates and times
+import re  # Used for email and phone format validation using regular expressions
+
+# =========================
+# VALIDATION HELPERS
+# =========================
+
+def validate_required_fields(data, required_fields):
+    """
+    Ensures all required fields are present and not empty.
+    Returns None if valid, or an error dict if missing fields are found.
+    """
+    for field in required_fields:
+        if not data.get(field):
+            return {"error": f"Missing required field: {field}"}
+    return None
+
+def validate_email_format(email):
+    """
+    Validates email format using regex. Returns True if valid, False otherwise.
+    Empty values are considered valid for optional fields.
+    """
+    if not email:
+        return True
+    pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
+    return bool(re.match(pattern, email))
+
+def validate_phone_format(phone):
+    """
+    Validates phone number format. Accepts digits, dashes, spaces, and parentheses.
+    Empty values are considered valid for optional fields.
+    """
+    if not phone:
+        return True
+    pattern = r'^[\d\-\s\(\)]+$'
+    return bool(re.match(pattern, phone))
 
 # =========================
 # CLIENT ROUTES
@@ -19,6 +54,19 @@ def create_client():
     """Creates a new client using the request JSON payload."""
     try:
         data = request.get_json()
+
+        # Validate required fields
+        validation_error = validate_required_fields(data, ["name", "phone", "email"])
+        if validation_error:
+            return jsonify(validation_error), 400
+
+        # Validate optional format constraints
+        if not validate_email_format(data.get("email")):
+            return jsonify({"error": "Invalid email format"}), 400
+        if not validate_phone_format(data.get("phone")):
+            return jsonify({"error": "Invalid phone format"}), 400
+
+        # Create and store new client object
         new_client = Client(
             name=data.get("name"),
             phone=data.get("phone"),
@@ -26,7 +74,10 @@ def create_client():
         )
         db.session.add(new_client)
         db.session.commit()
+
+        # Return the new client in JSON format with 201 status
         return jsonify(new_client.to_json()), 201
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
@@ -37,11 +88,21 @@ def update_client(client_id):
     try:
         client = Client.query.get_or_404(client_id)
         data = request.get_json()
+
+        # Optional validation if fields are present
+        if "email" in data and not validate_email_format(data.get("email")):
+            return jsonify({"error": "Invalid email format"}), 400
+        if "phone" in data and not validate_phone_format(data.get("phone")):
+            return jsonify({"error": "Invalid phone format"}), 400
+
+        # Update only fields provided, or keep old values
         client.name = data.get("name", client.name)
         client.phone = data.get("phone", client.phone)
         client.email = data.get("email", client.email)
+
         db.session.commit()
         return jsonify(client.to_json())
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
@@ -58,6 +119,7 @@ def delete_client(client_id):
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
+
 # =========================
 # STYLIST ROUTES
 # =========================
@@ -73,6 +135,19 @@ def create_stylist():
     """Creates a new stylist based on input JSON and saves to database."""
     try:
         data = request.get_json()
+
+        # Validate required fields for stylist creation
+        validation_error = validate_required_fields(data, ["name", "specialty", "email", "phone"])
+        if validation_error:
+            return jsonify(validation_error), 400
+
+        # Validate format of email and phone
+        if not validate_email_format(data.get("email")):
+            return jsonify({"error": "Invalid email format"}), 400
+        if not validate_phone_format(data.get("phone")):
+            return jsonify({"error": "Invalid phone format"}), 400
+
+        # Create new Stylist object with optional portfolio_images (defaults to empty list)
         new_stylist = Stylist(
             name=data.get("name"),
             specialty=data.get("specialty"),
@@ -83,6 +158,7 @@ def create_stylist():
         db.session.add(new_stylist)
         db.session.commit()
         return jsonify(new_stylist.to_json()), 201
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
@@ -93,13 +169,23 @@ def update_stylist(stylist_id):
     try:
         stylist = Stylist.query.get_or_404(stylist_id)
         data = request.get_json()
+
+        # Validate email and phone format if they are being updated
+        if "email" in data and not validate_email_format(data.get("email")):
+            return jsonify({"error": "Invalid email format"}), 400
+        if "phone" in data and not validate_phone_format(data.get("phone")):
+            return jsonify({"error": "Invalid phone format"}), 400
+
+        # Update fields only if new values are provided
         stylist.name = data.get("name", stylist.name)
         stylist.specialty = data.get("specialty", stylist.specialty)
         stylist.email = data.get("email", stylist.email)
         stylist.phone = data.get("phone", stylist.phone)
         stylist.portfolio_images = data.get("portfolio_images", stylist.portfolio_images)
+
         db.session.commit()
         return jsonify(stylist.to_json())
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
@@ -116,6 +202,7 @@ def delete_stylist(stylist_id):
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
+
 # =========================
 # SERVICE ROUTES
 # =========================
@@ -131,6 +218,13 @@ def create_service():
     """Creates a new service (e.g., haircut, color) with pricing and duration."""
     try:
         data = request.get_json()
+
+        # Validate required fields for service creation
+        validation_error = validate_required_fields(data, ["name", "duration", "price"])
+        if validation_error:
+            return jsonify(validation_error), 400
+
+        # Create new Service object using validated input
         new_service = Service(
             name=data.get("name"),
             duration=data.get("duration"),
@@ -139,6 +233,7 @@ def create_service():
         db.session.add(new_service)
         db.session.commit()
         return jsonify(new_service.to_json()), 201
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
@@ -149,11 +244,15 @@ def update_service(service_id):
     try:
         service = Service.query.get_or_404(service_id)
         data = request.get_json()
+
+        # Update only the fields provided in the request payload
         service.name = data.get("name", service.name)
         service.duration = data.get("duration", service.duration)
         service.price = data.get("price", service.price)
+
         db.session.commit()
         return jsonify(service.to_json())
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
@@ -188,17 +287,37 @@ def create_appointment():
     """
     try:
         data = request.get_json()
+
+        # Validate required fields
+        validation_error = validate_required_fields(data, ["client_id", "stylist_id", "service_id", "date", "time"])
+        if validation_error:
+            return jsonify(validation_error), 400
+
+        # Validate and parse date
+        try:
+            appointment_date = datetime.strptime(data.get("date"), "%Y-%m-%d").date()
+        except ValueError:
+            return jsonify({"error": "Invalid date format. Use YYYY-MM-DD"}), 400
+
+        # Validate and parse time
+        try:
+            appointment_time = datetime.strptime(data.get("time"), "%H:%M:%S").time()
+        except ValueError:
+            return jsonify({"error": "Invalid time format. Use HH:MM:SS"}), 400
+
+        # Create new appointment object
         new_appointment = Appointment(
             client_id=data.get("client_id"),
             stylist_id=data.get("stylist_id"),
             service_id=data.get("service_id"),
-            date=datetime.strptime(data.get("date"), "%Y-%m-%d").date(),
-            time=datetime.strptime(data.get("time"), "%H:%M:%S").time(),
-            status=data.get("status", "booked")
+            date=appointment_date,
+            time=appointment_time,
+            status=data.get("status", "booked")  # Default to "booked" if not provided
         )
         db.session.add(new_appointment)
         db.session.commit()
         return jsonify(new_appointment.to_json()), 201
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
@@ -209,14 +328,28 @@ def update_appointment(appointment_id):
     try:
         appointment = Appointment.query.get_or_404(appointment_id)
         data = request.get_json()
+
+        # Parse and update date if provided
         if "date" in data:
-            appointment.date = datetime.strptime(data["date"], "%Y-%m-%d").date()
+            try:
+                appointment.date = datetime.strptime(data["date"], "%Y-%m-%d").date()
+            except ValueError:
+                return jsonify({"error": "Invalid date format. Use YYYY-MM-DD"}), 400
+
+        # Parse and update time if provided
         if "time" in data:
-            appointment.time = datetime.strptime(data["time"], "%H:%M:%S").time()
+            try:
+                appointment.time = datetime.strptime(data["time"], "%H:%M:%S").time()
+            except ValueError:
+                return jsonify({"error": "Invalid time format. Use HH:MM:SS"}), 400
+
+        # Update other fields if provided
         appointment.status = data.get("status", appointment.status)
         appointment.service_id = data.get("service_id", appointment.service_id)
+
         db.session.commit()
         return jsonify(appointment.to_json())
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
@@ -253,6 +386,13 @@ def create_invoice():
     """
     try:
         data = request.get_json()
+
+        # Validate required invoice fields
+        validation_error = validate_required_fields(data, ["appointment_id", "total_amount", "payment_method"])
+        if validation_error:
+            return jsonify(validation_error), 400
+
+        # Create new invoice with the current UTC time as paid_at
         new_invoice = Invoice(
             appointment_id=data.get("appointment_id"),
             total_amount=data.get("total_amount"),
@@ -262,6 +402,7 @@ def create_invoice():
         db.session.add(new_invoice)
         db.session.commit()
         return jsonify(new_invoice.to_json()), 201
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
@@ -272,10 +413,14 @@ def update_invoice(invoice_id):
     try:
         invoice = Invoice.query.get_or_404(invoice_id)
         data = request.get_json()
+
+        # Update fields if present, otherwise keep current values
         invoice.total_amount = data.get("total_amount", invoice.total_amount)
         invoice.payment_method = data.get("payment_method", invoice.payment_method)
+
         db.session.commit()
         return jsonify(invoice.to_json())
+
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
